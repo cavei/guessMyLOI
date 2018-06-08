@@ -1,0 +1,185 @@
+\documentclass{article}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+To start analyzing LOI we need to have alle counts for all the samples we care about.
+
+<<loadAlleleCounts>>=
+library(guessMyLOI)
+library(bitutils)
+library(pheatmap)
+globalExpression<- bread("../full-raw-counts-norm-3s-10count-with-annotation.txt", header=T, row.names=1)
+
+gatk_ai <- readGATK.AllelicImbalance(file="../martello-expression-allelic-imbalance/inHouse-tot-pub-alleleExpression.txt", annotCol = 7)
+gatk_ai <- filter_by_overall_depth(gatk_ai, depth = 20)
+
+head(gatk_ai$alleleAnnot)
+head(gatk_ai$alleleCounts)
+
+gatk_ratios <- computeAlleleRatios(gatk_ai, countsToCall = 10)
+head(gatk_ratios$ratios)
+tail(gatk_ratios$ratios)
+
+gatk_ratios <- callHetero(gatk_ratios, thr = 0.2)
+head(gatk_ratios$isHetero)
+
+heteroGene <- callHeteroSNPperGene(gatk_ratios)
+head(heteroGene$geneLOI)
+head(heteroGene$geneAnnot)
+
+plot_guessedLOI(heteroGene)
+
+filter_by_genes(heteroGene, c("NANOG","GNAS", "MEG8", "MEG3", "H19"))
+
+gorder <- bread("../martello-methylation-allelic-imbalance/intersect-imprinting-regions/sort-gene-list.txt")
+gkind <- gorder$V2
+gord <- gorder$V1
+gord
+
+gOrdMat <- filter_matrix_by_genes(globalExpression, gord)[, c(1, 5:17)]
+
+hg <- plot_guessedLOI(heteroGene, geneOrder = gord, minToSee = 2)
+
+presenceMask <- sapply(row.names(hg$geneLOI), function(g){
+  genes <- unlist(strsplit(g, ";"))
+  sapply(gOrdMat[,1], function(geneD) {
+    any(unlist(strsplit(geneD ,split = ";")) %in% genes)
+  })
+})
+
+addThis <- which(!apply(presenceMask, 1, any))
+additionalMonoallelic <- gOrdMat[addThis,]
+additionalMonoallelic[additionalMonoallelic < 20] <- NA
+additionalMonoallelic[!is.na(additionalMonoallelic)] <- 0
+additionalMonoallelic <- additionalMonoallelic[, colnames(hg$geneLOI)]
+
+row.names(additionalMonoallelic) <- names(addThis)
+fakeAnnot <- data.frame(chr=rep("add", length(addThis)),
+                        pos=seq_along(addThis),
+                        gene=names(addThis), stringsAsFactors = F)
+additionalMonoallelic <- list(geneLOI=additionalMonoallelic,
+                              geneAnnot=fakeAnnot)
+
+ft <- plot_gessedLOI(heteroGene, geneOrder = gord, minToSee = 2, addThisMono=additionalMonoallelic)
+duplicated <- row.names(ft$geneLOI)[grep("\\.1", row.names(ft$geneLOI))]
+duplicated[3] = "MEG3;MEG8"
+ft <- plot_gessedLOI(heteroGene, geneOrder = gord, minToSee = 2, gaps_col = c(9,41), addThisMono=additionalMonoallelic, removeME=duplicated)
+
+@
+
+<<MEG3-locus>>=
+gatk_ai <- readGATK.AllelicImbalance(file="../inHouse-tot-pub-c10-alleleExpression.txt", annotCol = 7)
+gatk_ai <- filter_by_overall_depth(gatk_ai, depth = 20)
+
+keep = gatk_ai$alleleAnnot$gene == "MEG3"
+MEG3_ai <- filter_rows(gatk_ai, keep)
+
+head(MEG3_ai$alleleAnnot)
+head(MEG3_ai$alleleCounts)
+
+gatk_Mratios <- computeAlleleRatios(MEG3_ai, countsToCall = 10, total = TRUE)
+gatk_Mratios <- callHetero(gatk_Mratios, thr = 0.2)
+gatk_Mratios <- filterSNP(gatk_Mratios)
+
+keep = apply(gatk_Mratios$isHetero, 1, sum, na.rm=T) > 2
+gatk_Mratios <- list(ratios=gatk_Mratios$ratios[keep, ], annot=gatk_Mratios$annot[keep, ], isHetero=gatk_Mratios$isHetero[keep, ], posUID=gatk_Mratios$posUID[keep])
+
+
+# par(mfrow=c(2,5))
+# for (c in colnames(gatk_Mratios$ratios)[c(1,3,10,4:9,2)]) {
+#   bars <- gatk_Mratios$ratios[, c]
+#   bars[is.na(bars)] <- 0
+#   barplot(bars, ylim=c(0,1), las=3, names.arg=gatk_Mratios$annot$id, main=c)
+#
+# }
+
+
+data = data.frame(gatk_Mratios$ratios)
+inv <- 1-data.frame(gatk_Mratios$ratios)
+data$allele <- rep("alt", NROW(data))
+inv$allele <- rep("ref", NROW(inv))
+
+data <- rbind(data,inv)
+# data[is.na(data)] <- 0
+data$id <- factor(gatk_Mratios$annot$id, levels=gatk_Mratios$annot$id[order(gatk_Mratios$annot$pos)])
+data$pos <- gatk_Mratios$annot$pos[order(gatk_Mratios$annot$pos)]
+
+colnames(data)[c(1,3,10)] <- c("BJ_FIBRO", "HFF_FIBRO","IMR90_FIBRO")
+
+ggbarplot(data, x="id",
+          y = colnames(data[,c(1,3,10,4:9,2)]),
+          palette=c("red","blue"),
+          combine = TRUE,
+          x.text.angle = 90,
+          fill="allele",
+          color = "white")
+
+@
+
+<<Xinactivation>>=
+library(ggpubr)
+
+# gatk_ai <- readGATK.AllelicImbalance(file="../inHouse-IMR90-pub-alleleExpression.txt", annotCol = 7)
+# gatk_ai <- readGATK.AllelicImbalance(file="../inHouse-tot-pub-c10-alleleExpression.txt", annotCol = 7)
+# gatk_ai <- readGATK.AllelicImbalance(file="../inHouse-tot-all-alleleExpression.txt", annotCol = 7)
+# gatk_ai <- readGATK.AllelicImbalance(file="../IMR90-confidence0.txt", annotCol = 7)
+
+gatk_ai <- filter_by_overall_depth(gatk_ai, depth = 20)
+
+
+keep = gatk_ai$alleleAnnot$chr == "X"
+chrx_ai <- filter_rows(gatk_ai, keep)
+
+chrx_ai <- removePsudosomalRegion(chrx_ai)
+
+
+gatk_xratios <- computeAlleleRatios(chrx_ai, countsToCall = 10, total = TRUE)
+gatk_xratios <- callHetero(gatk_xratios, thr = 0.2)
+head(gatk_xratios$ratios)
+tail(gatk_xratios$ratios)
+
+# gatk_ratios <- filterSNP(gatk_ratios)
+# WI38 <- filterBySample("CGZ_S4", gatk_ratios, "CGX_S6", byGene = FALSE)
+# plotChrSample(WI38)
+#
+IMR90 <- filterBySample("HPD08", gatk_xratios, "IMR90-F", byGene = FALSE)
+# plotChrSample(IMR90)
+
+# IMR90 <- filterBySample("CHB_S2", gatk_xratios, "CGY_S3", byGene = FALSE)
+
+considerRatio <- IMR90
+
+data = data.frame(considerRatio$ratios)
+inv <- 1-data.frame(considerRatio$ratios)
+data$allele <- rep("alt", NROW(data))
+data$id <- considerRatio$annot$id
+data$pos <- considerRatio$annot$pos
+inv$allele <- rep("ref", NROW(inv))
+inv$id <- considerRatio$annot$id
+inv$pos <- considerRatio$annot$pos
+
+data <- rbind(data,inv)
+colnames(data)
+
+data <- data[data$id != ".", ]
+
+sortID <- unique(data[, c("id", "pos")])
+sortID[order(sortID$pos),]
+
+sortID <- sortID$id[order(sortID$pos)]
+data$id<-factor(data$id, levels=sortID)
+
+ggbarplot(na.omit(data), x="id",
+          y = colnames(data)[1:2],
+          palette=c("red","blue"),
+          combine = TRUE,
+          x.text.angle = 90,
+          fill="allele",
+          color = "white")
+
+@
+
+
+
+\end{document}
