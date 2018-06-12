@@ -98,10 +98,13 @@ server <- function(input, output, session) {
 
   output$LOIheatmap <- renderPlot({
     data <- processTheData()
+    gr = NULL
     if (is.null(data))
       return(NULL)
-
-    plot_guessedLOI(data$S$genes, plot=T)
+    if (input$species=="mmusculus") {
+      gr <- 93
+    }
+    plot_guessedLOI(data$S$genes, gaps_row = gr, plot=T)
   })
 
   output$LOIgene <- renderPlot({
