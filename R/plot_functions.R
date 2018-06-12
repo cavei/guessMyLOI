@@ -37,6 +37,9 @@ plot_guessedLOI <- function(heteroGene, geneOrder=NULL, minToSee=1, flatTo=5, ga
     row.names(flatteredGeneSnpCount) <- sub('\\.1', replacement = "", row.names(flatteredGeneSnpCount))
   }
 
+  if (all(flatteredGeneSnpCount==0 | is.na(flatteredGeneSnpCount)))
+    return("No SNP found in X Chromosomes.")
+
   height=80
   width=7
   if(NROW(flatteredGeneSnpCount) ==1) {
@@ -44,10 +47,7 @@ plot_guessedLOI <- function(heteroGene, geneOrder=NULL, minToSee=1, flatTo=5, ga
     width=3
   }
 
-
   if(plot) {
-    if(nrow(flatteredGeneSnpCount) > 50)
-      gaps_row=93
     pheatmap(flatteredGeneSnpCount, cluster_cols=F, cluster_rows=F,
            color= color,
            border_col=bc,
